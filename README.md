@@ -22,9 +22,33 @@ into an app for your own device.
   - song `.zip` files copied into the app's folder with the Files app are installed automatically.
 - Runs natively (IL2CPP, Metal); no emulation and no JIT.
 
+## Which game version do I need?
+
+**Only Beat Saber 1.29.1 for Windows, from Steam.**
+
+- **The latest Steam version does not work.** Beat Saber 1.29.1 is the last version built on
+  Unity 2019; later versions use a newer Unity with different engine files, shader formats and
+  data layout, so this port cannot build them.
+- **Older versions are not supported.** The port patches specific methods of the 1.29.1 game
+  code. With any other version the patch step prints `NOT FOUND` for the patches that don't
+  match and stops with "is this Beat Saber 1.29.1?".
+- **Other stores are not supported:** the Meta/Oculus PC version and the Quest version are
+  different builds.
+
+Steam installs the newest version by default, but owners can download 1.29.1 with Steam's own
+`download_depot` console command (see step 1 below). It only works for accounts that own the
+game.
+
+### Why is there no ready-made app to download?
+
+The app contains the game's own code compiled for iOS, together with the game's data. Sharing
+it would mean distributing Beat Games' work, so everyone builds the app themselves, on their own
+Mac, from their own copy of the game. For the same reason, please never share the `.ipa` you
+build.
+
 ## Requirements
 
-- Beat Saber on **Steam**, bought with your own account.
+- Beat Saber 1.29.1 on **Steam**, bought with your own account (see above).
 - A Mac with Xcode (iOS SDK, `ibtool`, `actool`), CMake and Ninja, the .NET 10 SDK, Python 3,
   and Rosetta 2 on Apple Silicon (Unity's 2019 build tools are x86_64).
 - About 25 GB of free disk space.
