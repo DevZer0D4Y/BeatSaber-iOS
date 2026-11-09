@@ -46,6 +46,15 @@ it would mean distributing Beat Games' work, so everyone builds the app themselv
 Mac, from their own copy of the game. For the same reason, please never share the `.ipa` you
 build.
 
+### Can I build on Windows or Linux?
+
+Not at the moment: building needs a Mac. The app is compiled and linked against Apple's iOS SDK
+with Xcode's tools (`clang`, `ld`, `vtool`, `ibtool`, `actool`), and textures are encoded with
+macOS's ImageIO. The other steps (game data conversion, the patcher, the code generator) could
+run elsewhere, but the final build cannot yet. Any Apple Silicon or Intel Mac that runs a
+current Xcode works. Signing and installing the finished `.ipa` can be done from any computer
+with your usual sideloading tool.
+
 ## Requirements
 
 - Beat Saber 1.29.1 on **Steam**, bought with your own account (see above).
