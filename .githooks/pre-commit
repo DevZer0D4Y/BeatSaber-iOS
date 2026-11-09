@@ -1,0 +1,16 @@
+#!/bin/bash
+# Block game data, binaries, certificates, images/audio and big files from being committed.
+# Enable with: git config core.hooksPath .githooks
+bad=0
+while IFS= read -r f; do
+  [ -f "$f" ] || continue
+  case "$f" in
+    *.assets|*.resS|*.resource|*.bundle|*.dll|*.exe|*.pdb|*.so|*.a|*.dylib|*.ipa|*.car|*.p12|*.cer|*.mobileprovision|\
+    *global-metadata.dat|*level[0-9]*|*globalgamemanagers*|*boot.config|\
+    *.png|*.jpg|*.jpeg|*.webp|*.gif|*.ogg|*.egg|*.wav|*.mp3|*.zip)
+      echo "pre-commit: blocked game/binary/media file: $f"; bad=1;;
+  esac
+  sz=$(wc -c < "$f"); if [ "$sz" -gt 500000 ]; then echo "pre-commit: file too big ($sz): $f"; bad=1; fi
+  if head -c 8 "$f" | grep -q -a "UnityFS\|UnityWeb\|xar!"; then echo "pre-commit: Unity/pkg data: $f"; bad=1; fi
+done < <(git diff --cached --name-only --diff-filter=AM)
+exit $bad

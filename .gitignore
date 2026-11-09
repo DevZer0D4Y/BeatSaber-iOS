@@ -1,0 +1,49 @@
+# Never commit game files or anything derived from them
+*.assets
+*.resS
+*.resource
+*.bundle
+*.dll
+*.exe
+*.pdb
+*.so
+*.a
+*.dylib
+*.ipa
+*.app
+*.mobileprovision
+*.p12
+*.cer
+*.car
+level[0-9]*
+globalgamemanagers*
+global-metadata.dat
+unity default resources
+unity_builtin_extra
+boot.config
+Il2CppOutput*/
+# no images, audio or archives: keeps game art, icons, songs and maps out
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+*.ogg
+*.egg
+*.wav
+*.mp3
+*.zip
+# build output and local work
+/build/
+/work/
+/Generated/
+/Data/
+tools/bstool/bin/
+tools/bstool/obj/
+__pycache__/
+*.pyc
+venv/
+.venv/
+*.log
+.DS_Store
+._*
