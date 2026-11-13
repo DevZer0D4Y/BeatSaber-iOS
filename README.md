@@ -19,7 +19,8 @@ into an app for your own device.
     ranked maps, previews, one-tap download, and a list of installed songs;
   - maps in the newer v4 format are converted on install to a format 1.29.1 can play;
   - difficulties that need PC mods (Noodle Extensions, Mapping Extensions, Vivify) are skipped;
-  - song `.zip` files copied into the app's folder with the Files app are installed automatically.
+  - songs added with the Files app, AirDrop or a computer (as `.zip` files or song folders) are
+    checked and installed automatically, even while the game is running.
 - Runs natively (IL2CPP, Metal); no emulation and no JIT.
 
 ## Which game version do I need?
@@ -150,8 +151,24 @@ sideloading tool. Optional settings:
 ## Custom songs
 
 Open **SONGS +** in the main menu to browse and download maps from
-[BeatSaver](https://beatsaver.com), then find them under Solo › Custom Songs. You can also copy
-song folders or `.zip` files into the app's folder with the Files app (On My iPhone › Beat Saber).
+[BeatSaver](https://beatsaver.com), then find them under Solo › Custom Songs.
+
+You can also add songs yourself. The game's folder is in the Files app under
+On My iPhone › Beat Saber (from a computer: Finder on a Mac, or iTunes / the Apple Devices app
+on Windows, in the iPhone's Files tab):
+
+- **`.zip` files** (as downloaded from BeatSaver): put them in the `Beat Saber` folder or in
+  `Beat Saber/CustomLevels`. They are installed and the zip is deleted. A zip that can't be used
+  is renamed to `.zip.failed`.
+- **Song folders** (already unzipped, with `Info.dat`, the audio, the cover and the difficulty
+  files): put them in `Beat Saber/CustomLevels`.
+
+New songs are picked up when you start the game, when you come back to it, when you open
+**SONGS +**, and every few seconds while you are in the menus. Each song is checked once the
+same way as a download: maps in the newer v4 format are converted, file-name case is fixed and
+difficulties that need PC mods are removed. A song folder that can't be used is left exactly as
+it is.
+
 Maps are made by the community; check the license of what you download.
 
 ## Legal

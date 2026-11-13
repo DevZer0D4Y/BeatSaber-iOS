@@ -111,9 +111,12 @@ namespace BeatSaberPort
         }
 
         // ------------------------------------------------------------------ open / close
+        int _libraryVersion;
+
         void Open()
         {
             _open = true;
+            Songs.Scan();
             _installed = Songs.InstalledKeys();
             if (_tab == BsTab.Mine) LoadLocal();
             else if (_maps.Count == 0 && !_loading) Reload();
@@ -382,6 +385,11 @@ namespace BeatSaberPort
             _safe = new Rect(sa.x / _s, (Screen.height - sa.yMax) / _s, sa.width / _s, sa.height / _s);
             _pillShown = !_open && !TouchInput.InGameplay;
             if (!_open && Songs.pendingRefresh && !_pDown) Songs.RefreshGameList();
+            if (_libraryVersion != Songs.LibraryVersion)
+            {
+                _libraryVersion = Songs.LibraryVersion;
+                if (_open) { _installed = Songs.InstalledKeys(); if (_tab == BsTab.Mine) LoadLocal(); }
+            }
             PumpDownloads();
             if (_kb != null)
             {

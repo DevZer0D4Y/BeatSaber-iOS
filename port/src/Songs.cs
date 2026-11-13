@@ -3,7 +3,9 @@
 // CustomLevelPathHelper.baseProjectPath. bstool points that at GetBasePath() (the app's
 // Documents folder on iOS, visible in the Files app) and turns the Custom Songs category on.
 // This class installs song zips (from the in-game browser or dropped into Documents), checks
-// they suit this game version, and tells an open song list to reload.
+// songs - zipped or copied in as folders - suit this game version, and tells an open song list
+// to reload. Dropped files are picked up at launch, when the app comes back to the foreground
+// and when the song browser opens.
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -64,10 +66,117 @@ namespace BeatSaberPort
                         }
                         File.WriteAllText(marker, "sample levels copied\n");
                     }
-                    ImportDroppedZips();
                 }
                 catch (Exception e) { Debug.Log("[BeatSaberPort] songs init: " + e); }
+                ScanNow();
             });
+            if (PortBootstrap.Root != null) PortBootstrap.Root.AddComponent<SongWatcher>();
+        }
+
+        // Look for new zips and hand-copied song folders, in the background. Overlapping
+        // requests are dropped (the running scan already covers them).
+        public static void Scan()
+        {
+            if (System.Threading.Interlocked.CompareExchange(ref _scanning, 1, 0) != 0) return;
+            System.Threading.Tasks.Task.Run(() => { try { ScanWork(); } finally { _scanning = 0; } });
+        }
+
+        static int _scanning;
+
+        static void ScanNow()
+        {
+            if (System.Threading.Interlocked.CompareExchange(ref _scanning, 1, 0) != 0) return;
+            try { ScanWork(); } finally { _scanning = 0; }
+        }
+
+        static void ScanWork()
+        {
+            try
+            {
+                int n = ImportDroppedZips() + CheckCopiedFolders();
+                if (n > 0) { pendingRefresh = true; LibraryVersion++; }
+            }
+            catch (Exception e) { Debug.Log("[BeatSaberPort] song scan: " + e); }
+        }
+
+        // bumped whenever the scan changes the song folder (the browser's "My songs" list reloads)
+        public static volatile int LibraryVersion;
+
+        // ------------------------------------------------------------------ copied folders
+        // A folder copied straight into CustomLevels is checked once, like a download. The check
+        // runs on a copy which only replaces the folder when it succeeds, so a song that can't be
+        // used is left exactly as the user put it. A hidden marker records the folder's state;
+        // a folder that changes afterwards (e.g. still being copied) is checked again.
+        const string CheckedMarker = ".port-checked";
+
+        static int CheckCopiedFolders()
+        {
+            if (!Directory.Exists(LevelsDir)) return 0;
+            int changed = 0;
+            foreach (var dir in Directory.GetDirectories(LevelsDir))
+            {
+                string name = Path.GetFileName(dir);
+                if (name.StartsWith(".")) continue;
+                string sig = Signature(dir);
+                if (sig == null) continue;   // no Info.dat (yet)
+                string marker = Path.Combine(dir, CheckedMarker);
+                try { if (File.Exists(marker) && File.ReadAllText(marker).StartsWith(sig + "\n")) continue; }
+                catch { }
+                string err = CheckInPlace(dir);
+                Debug.Log("[BeatSaberPort] song folder " + name + ": " + (err ?? "ok"));
+                try { File.WriteAllText(marker, Signature(dir) + "\n" + (err ?? "ok") + "\n"); } catch { }
+                if (err == null) changed++;
+            }
+            return changed;
+        }
+
+        // file count + newest write time of the song's own files
+        static string Signature(string dir)
+        {
+            if (!File.Exists(Path.Combine(dir, "Info.dat")) && !Directory.GetFiles(dir).Any(f =>
+                    Path.GetFileName(f).Equals("info.dat", StringComparison.OrdinalIgnoreCase))) return null;
+            int count = 0; long newest = 0;
+            foreach (var f in Directory.GetFiles(dir))
+            {
+                if (Path.GetFileName(f).StartsWith(".")) continue;
+                count++;
+                newest = Math.Max(newest, File.GetLastWriteTimeUtc(f).Ticks);
+            }
+            return count + ":" + newest;
+        }
+
+        static string CheckInPlace(string dir)
+        {
+            string tmp = Path.Combine(IncomingDir, Guid.NewGuid().ToString("N"));
+            string old = tmp + ".old";
+            try
+            {
+                Directory.CreateDirectory(tmp);
+                foreach (var f in Directory.GetFiles(dir))
+                {
+                    string n = Path.GetFileName(f);
+                    if (n.StartsWith(".")) continue;
+                    File.Copy(f, Path.Combine(tmp, n.Equals("info.dat", StringComparison.OrdinalIgnoreCase) ? "Info.dat" : n));
+                }
+                string err = Check(tmp);
+                if (err != null) return err;
+                Directory.Move(dir, old);
+                Directory.Move(tmp, dir);
+                // keep anything the check didn't copy (subfolders such as editor backups)
+                foreach (var sd in Directory.GetDirectories(old))
+                    Directory.Move(sd, Path.Combine(dir, Path.GetFileName(sd)));
+                return null;
+            }
+            catch (Exception e)
+            {
+                if (!Directory.Exists(dir) && Directory.Exists(old)) Directory.Move(old, dir);   // undo a half swap
+                return "check failed: " + e.Message;
+            }
+            finally
+            {
+                try { if (Directory.Exists(tmp)) Directory.Delete(tmp, true); } catch { }
+                try { if (Directory.Exists(old)) Directory.Delete(old, true); } catch { }
+            }
         }
 
         // Zips put into Documents or Documents/CustomLevels (Files app, AirDrop) get installed.
@@ -86,7 +195,6 @@ namespace BeatSaberPort
                     File.Move(zip, zip + ".failed");
                 }
             }
-            if (n > 0) pendingRefresh = true;
             return n;
         }
 
@@ -132,6 +240,7 @@ namespace BeatSaberPort
                 string dest = Path.Combine(LevelsDir, folder);
                 if (Directory.Exists(dest)) Directory.Delete(dest, true);
                 Directory.Move(tmp, dest);
+                try { File.WriteAllText(Path.Combine(dest, CheckedMarker), Signature(dest) + "\nok\n"); } catch { }
                 return new Result { ok = true, folder = folder };
             }
             catch (Exception e)
@@ -288,6 +397,25 @@ namespace BeatSaberPort
                 Debug.Log("[BeatSaberPort] custom song list reloaded");
             }
             catch (Exception e) { Debug.Log("[BeatSaberPort] song list reload: " + e); }
+        }
+    }
+
+    // Rescans the song folder when the app comes back to the foreground (songs added with the
+    // Files app, AirDrop or a computer while the game was in the background), and every few
+    // seconds while in the menus (e.g. songs dragged in from Files in iPad split view).
+    public class SongWatcher : MonoBehaviour
+    {
+        const float MenuInterval = 10f;
+        float _next = MenuInterval;
+
+        void OnApplicationFocus(bool focus) { if (focus) Songs.Scan(); }
+        void OnApplicationPause(bool paused) { if (!paused) Songs.Scan(); }
+
+        void Update()
+        {
+            if (Time.unscaledTime < _next) return;
+            _next = Time.unscaledTime + MenuInterval;
+            if (!TouchInput.InGameplay) Songs.Scan();
         }
     }
 }
