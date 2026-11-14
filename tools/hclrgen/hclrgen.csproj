@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Runs HybridCLR's own MethodBridge generator (from its hybridclr_unity tooling, MIT) outside
+       the Unity editor. Pass the tooling checkout with -p:HclrUnity=<dir> (tools/hybridclr/prepare.sh). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <NoWarn>CS8632;CS0162;CS0168;CS0219;CS0414;CS0649;CS1998;CS0618</NoWarn>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="*.cs" />
+    <Compile Include="$(HclrUnity)/Editor/MethodBridge/*.cs" />
+    <Compile Include="$(HclrUnity)/Editor/ABI/*.cs" />
+    <Compile Include="$(HclrUnity)/Editor/Meta/*.cs" />
+    <Compile Include="$(HclrUnity)/Editor/Template/*.cs" />
+    <Compile Include="$(HclrUnity)/Editor/HashUtil.cs" />
+    <Reference Include="dnlib"><HintPath>$(HclrUnity)/Plugins/dnlib.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

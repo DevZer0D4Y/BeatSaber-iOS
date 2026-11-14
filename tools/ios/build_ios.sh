@@ -10,6 +10,10 @@
 #        APP_ICON   image for the home screen icon (bundle phase; cropped to a centred square)
 #        BUNDLE_ID  app identifier (default com.devz.beatsaber)
 #        JOBS       parallel compile jobs (default 2)
+#        HCLR       game-free app: work folder of tools/il2cpp_hclr.sh. The game's code runs in
+#                   HybridCLR's interpreter and the player supplies the game data (see GameData.mm);
+#                   needs HCLR_SRC (tools/hybridclr/prepare.sh output), HCLR_LIB (the runtime from
+#                   build_libil2cpp.sh) and PORT_DLL (BeatSaberPort.dll). IOS_DATA is not used.
 set -euo pipefail
 
 W=${BS_WORK:-$HOME/BeatSaber-iOS-work}
@@ -19,6 +23,13 @@ IL2CPP_INC=$U/iOSSupport/il2cpp/libil2cpp/include
 BDWGC_INC=$U/Unity/Unity.app/Contents/il2cpp/external/bdwgc/include
 IL=$W/ios/Il2CppOutput
 IL_DATA=$W/ios/il2cpp_data
+LIBIL2CPP=$TR/Libraries/libil2cpp-net40.a
+if [ -n "${HCLR:-}" ]; then
+  : "${HCLR_SRC:?set HCLR_SRC}" "${HCLR_LIB:?set HCLR_LIB}"
+  IL=$HCLR/Il2CppOutput; IL_DATA=$HCLR/il2cpp_data
+  IL2CPP_INC=$HCLR_SRC/tree/libil2cpp   # the merged runtime's headers
+  LIBIL2CPP=$HCLR_LIB
+fi
 SRC=$(cd "$(dirname "$0")/../.." && pwd)            # repository root
 NATIVE=$SRC/port/native
 OBJ=${OBJ:-$W/obj}
@@ -55,13 +66,15 @@ compile_one() {   # kind src obj
   case $kind in
     ilcpp) $CXX $IL_CXX -c "$src" -o "$obj.tmp" ;;
     ilc)   $CC  $IL_C   -c "$src" -o "$obj.tmp" ;;
-    objcxx) $CXX $TR_OBJC -std=c++11 -x objective-c++ -c "$src" -o "$obj.tmp" ;;
+    objcxx) $CXX $TR_OBJC -std=c++11 -x objective-c++ ${FS_RENAME:+$([ "${src##*/}" = Filesystem.mm ] && echo "$FS_RENAME")} -c "$src" -o "$obj.tmp" ;;
     objc)  $CC  $TR_OBJC -x objective-c -c "$src" -o "$obj.tmp" ;;
     cxx)   $CXX $COMMON -std=c++11 -fexceptions $TR_INC -c "$src" -o "$obj.tmp" ;;
   esac && mv "$obj.tmp" "$obj" || { echo "FAILED: $src" >&2; rm -f "$obj.tmp"; return 1; }
 }
 export -f compile_one
-export CC CXX IL_CXX IL_C TR_OBJC TR_INC COMMON
+# game-free app: the trampoline's UnityDataBundleDir() gives way to port/native/GameData.mm
+FS_RENAME=${HCLR:+-DUnityDataBundleDir=UnityDataBundleDir_trampoline}
+export CC CXX IL_CXX IL_C TR_OBJC TR_INC COMMON FS_RENAME
 
 if has compile; then
   # objects are reused by timestamp only: start over when the compile flags change
@@ -89,9 +102,15 @@ if has compile; then
   done
   # the port's native glue + single-binary main
   for f in "$NATIVE"/*.cpp "$NATIVE"/*.mm; do
+    [ -z "${HCLR:-}" ] && [ "$(basename "$f")" = GameData.mm ] && continue
     case "${f##*.}" in mm) k=objcxx;; *) k=cxx;; esac
     echo "$k|$f|$OBJ/native/$(basename "$f").o" >> "$list"
   done
+  # HybridCLR's call bridges include runtime headers by relative path: compile them in the tree
+  if [ -n "${HCLR:-}" ]; then
+    cp "$HCLR/MethodBridge.cpp" "$HCLR_SRC/tree/libil2cpp/hybridclr/generated/MethodBridge_ios.cpp"
+    echo "ilcpp|$HCLR_SRC/tree/libil2cpp/hybridclr/generated/MethodBridge_ios.cpp|$OBJ/gen/MethodBridge.o" >> "$list"
+  fi
   # engine internal calls the managed code uses (the editor normally generates this)
   mkdir -p "$OBJ/gen"
   python3 "$SRC/tools/ios/gen_icalls.py" "$IL" "$TR/Libraries/libiPhone-lib-il2cpp.a" "$OBJ/gen/InternalCalls.cpp.new"
@@ -115,7 +134,7 @@ if has link; then
   mkdir -p "$APP"
   find "$OBJ" -name '*.o' > "$OBJ/link_list.txt"
   nice -n 19 $CXX $ARCH -o "$APP/BeatSaber" -filelist "$OBJ/link_list.txt" \
-    "$TR/Libraries/libiPhone-lib-il2cpp.a" "$TR/Libraries/libil2cpp-net40.a" \
+    "$TR/Libraries/libiPhone-lib-il2cpp.a" "$LIBIL2CPP" \
     -dead_strip -Wl,-no_deduplicate \
     -framework Foundation -framework UIKit -framework QuartzCore -framework CoreGraphics \
     -framework Metal -framework AudioToolbox -framework AVFoundation -framework AVKit \
@@ -124,6 +143,7 @@ if has link; then
     -framework GameController -framework CoreLocation -framework StoreKit \
     -weak_framework CoreMotion -weak_framework ReplayKit -weak_framework OpenGLES -weak_framework OpenAL \
     -Wl,-rpath,/usr/lib/swift -Wl,-rpath,@executable_path/Frameworks \
+    -Wl,-U,_GameDataMissing -Wl,-U,_GameRootDir \
     -liconv -lz -lc++ 2>&1 | grep -v "^ld: warning: .*was built for newer\|object file.*was built for" | head -60
   [ -f "$APP/BeatSaber" ] || { echo "link failed"; exit 1; }
   # iOS 27 refuses to launch apps linked against its SDK that lack the UIScene life cycle,
@@ -134,7 +154,7 @@ if has link; then
 fi
 
 if has bundle; then
-  : "${IOS_DATA:?set IOS_DATA to the converted iOS Data folder}"
+  [ -n "${HCLR:-}" ] || : "${IOS_DATA:?set IOS_DATA to the converted iOS Data folder}"
   mkdir -p "$APP"
   cp "$SRC/tools/ios/Info.plist" "$APP/Info.plist"
   plutil -replace CFBundleIdentifier -string "$BUNDLE_ID" "$APP/Info.plist"
@@ -143,6 +163,7 @@ if has bundle; then
     --minimum-deployment-target $MIN_IOS --target-device iphone --target-device ipad > /dev/null
   [ -e "$APP/LaunchScreen.nib" ] || { echo "launch screen compile failed"; exit 1; }
   # home screen icon: an asset catalog compiled by actool from APP_ICON (any image size)
+  rm -f "$APP/Assets.car" "$APP"/AppIcon*.png
   if [ -n "${APP_ICON:-}" ]; then
     T=$(mktemp -d); SET=$T/Assets.xcassets/AppIcon.appiconset; mkdir -p "$SET"
     printf '{"info":{"version":1,"author":"xcode"}}' > "$T/Assets.xcassets/Contents.json"
@@ -166,16 +187,28 @@ if has bundle; then
     rm -rf "$T"
     [ -f "$APP/Assets.car" ] || { echo "icon compile failed"; exit 1; }
   fi
-  # Data: move (not copy) the converted data in; disk space is tight
-  if [ "$IOS_DATA" != "$APP/Data" ]; then rm -rf "$APP/Data"; mv "$IOS_DATA" "$APP/Data"; fi
-  D=$APP/Data
-  cp "$TR/Data/unity default resources" "$D/unity default resources"
-  mkdir -p "$D/Managed"
-  rm -rf "$D/Managed/"*.dll "$D/Managed/Metadata" "$D/Managed/Resources" "$D/Managed/etc"
-  cp -R "$IL_DATA/Metadata" "$IL_DATA/Resources" "$IL_DATA/etc" "$D/Managed/"
-  [ -d "$D/StreamingAssets" ] && { rm -rf "$D/Raw"; mv "$D/StreamingAssets" "$D/Raw"; }
-  # PC-only content: native plugins, Mono, XR subsystem manifests, the Windows default resources
-  rm -rf "$D/Plugins" "$D/MonoBleedingEdge" "$D/UnitySubsystems" "$D/Resources/unity default resources"
+  if [ -n "${HCLR:-}" ]; then
+    # game-free app: no game data inside; see port/native/GameData.mm for the layout
+    : "${PORT_DLL:?set PORT_DLL to BeatSaberPort.dll}"
+    rm -rf "$APP/Data" "$APP/Il2CppData" "$APP/HybridCLR"
+    mkdir -p "$APP/Il2CppData" "$APP/HybridCLR/aot" "$APP/HybridCLR/hot"
+    cp -R "$IL_DATA/Metadata" "$IL_DATA/Resources" "$IL_DATA/etc" "$APP/Il2CppData/"
+    cp "$HCLR"/aot/*.dll "$APP/HybridCLR/aot/"
+    cp "$HCLR/hot_names.txt" "$APP/HybridCLR/"
+    cp "$PORT_DLL" "$APP/HybridCLR/hot/"
+    cp "$TR/Data/unity default resources" "$APP/unity default resources"
+  else
+    # Data: move (not copy) the converted data in; disk space is tight
+    if [ "$IOS_DATA" != "$APP/Data" ]; then rm -rf "$APP/Data"; mv "$IOS_DATA" "$APP/Data"; fi
+    D=$APP/Data
+    cp "$TR/Data/unity default resources" "$D/unity default resources"
+    mkdir -p "$D/Managed"
+    rm -rf "$D/Managed/"*.dll "$D/Managed/Metadata" "$D/Managed/Resources" "$D/Managed/etc"
+    cp -R "$IL_DATA/Metadata" "$IL_DATA/Resources" "$IL_DATA/etc" "$D/Managed/"
+    [ -d "$D/StreamingAssets" ] && { rm -rf "$D/Raw"; mv "$D/StreamingAssets" "$D/Raw"; }
+    # PC-only content: native plugins, Mono, XR subsystem manifests, the Windows default resources
+    rm -rf "$D/Plugins" "$D/MonoBleedingEdge" "$D/UnitySubsystems" "$D/Resources/unity default resources"
+  fi
   # the executable may have been linked into another OUT; bring it along
   EXE=${EXE:-$W/ios/out/Payload/BeatSaber.app/BeatSaber}
   if [ "$EXE" != "$APP/BeatSaber" ] && ! cmp -s "$EXE" "$APP/BeatSaber"; then cp "$EXE" "$APP/BeatSaber"; fi

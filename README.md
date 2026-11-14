@@ -1,11 +1,12 @@
 # Beat Saber for iPhone and iPad (unofficial, non-VR)
 
 An unofficial flat-screen port of the PC version of Beat Saber 1.29.1 to iOS and iPadOS, played
-with touch instead of a VR headset. It is built on your own Mac from **your own copy of the game**.
+with touch instead of a VR headset. It runs **your own copy of the game**.
 
-**This repository contains no game files** — no assets, no game code, no music, no art — and no
-Unity binaries. It only contains the tools and the port code that turn a copy you already own
-into an app for your own device.
+**The app contains no game files.** No game code, no music, no art, no levels: you add those
+yourself, from the copy of Beat Saber you own on Steam. This repository, and the app published
+from it, only contain the port's own code, the tools to convert your copy, and the open-source
+and runtime parts listed under [Credits](#credits).
 
 ## Features
 
@@ -21,7 +22,16 @@ into an app for your own device.
   - difficulties that need PC mods (Noodle Extensions, Mapping Extensions, Vivify) are skipped;
   - songs added with the Files app, AirDrop or a computer (as `.zip` files or song folders) are
     checked and installed automatically, even while the game is running.
-- Runs natively (IL2CPP, Metal); no emulation and no JIT.
+- Unity's engine runs natively (Metal); the game's own code, loaded from your files, runs in the
+  [HybridCLR](https://github.com/focus-creative-games/hybridclr) interpreter. No JIT, no
+  emulation.
+
+## How it works
+
+The app is Unity 2019.4's iOS player with the game's code left out. When it starts, it loads the
+game's code (the `.dll` files of your copy, patched for touch and iOS) and the game's data from
+the `GameData` folder you put on your device, and runs them. Without that folder the app only
+shows how to add it.
 
 ## Which game version do I need?
 
@@ -29,76 +39,35 @@ into an app for your own device.
 
 - **The latest Steam version does not work.** Beat Saber 1.29.1 is the last version built on
   Unity 2019; later versions use a newer Unity with different engine files, shader formats and
-  data layout, so this port cannot build them.
+  data layout.
 - **Older versions are not supported.** The port patches specific methods of the 1.29.1 game
-  code. With any other version the patch step prints `NOT FOUND` for the patches that don't
-  match and stops with "is this Beat Saber 1.29.1?".
+  code. With any other version the import stops with "is this Beat Saber 1.29.1?".
 - **Other stores are not supported:** the Meta/Oculus PC version and the Quest version are
   different builds.
 
 Steam installs the newest version by default, but owners can download 1.29.1 with Steam's own
-`download_depot` console command (see step 1 below). It only works for accounts that own the
-game.
-
-### Why is there no ready-made app to download?
-
-The app contains the game's own code compiled for iOS, together with the game's data. Sharing
-it would mean distributing Beat Games' work, so everyone builds the app themselves, on their own
-Mac, from their own copy of the game. For the same reason, please never share the `.ipa` you
-build.
-
-### Can I build on Windows or Linux?
-
-Not at the moment: building needs a Mac. The app is compiled and linked against Apple's iOS SDK
-with Xcode's tools (`clang`, `ld`, `vtool`, `ibtool`, `actool`), and textures are encoded with
-macOS's ImageIO. The other steps (game data conversion, the patcher, the code generator) could
-run elsewhere, but the final build cannot yet. Any Apple Silicon or Intel Mac that runs a
-current Xcode works. Signing and installing the finished `.ipa` can be done from any computer
-with your usual sideloading tool.
-
-## Requirements
-
-- Beat Saber 1.29.1 on **Steam**, bought with your own account (see above).
-- A Mac with Xcode (iOS SDK, `ibtool`, `actool`), CMake and Ninja, the .NET 10 SDK, Python 3,
-  and Rosetta 2 on Apple Silicon (Unity's 2019 build tools are x86_64).
-- About 25 GB of free disk space.
-- A way to sideload apps (AltStore, SideStore, your own developer account, ...).
-
-## Building
-
-Set a work folder (anything outside this repository); the scripts use `~/BeatSaber-iOS-work`
-when `BS_WORK` is not set.
-
-```sh
-export BS_WORK=~/BeatSaber-iOS-work
-```
-
-### 1. Your game files
-
-Download the Windows build of Beat Saber **1.29.1** from your own Steam account. In the Steam
-console (`steam://open/console`):
+`download_depot` console command. In the Steam console (`steam://open/console`):
 
 ```
 download_depot 620980 620981 886973241045584398
 ```
 
-The manifest ID is the 1.29.1 one at the time of writing (check SteamDB if it fails). You need
-the `Beat Saber_Data` folder from the download. Below, `GAME` is that folder:
+The manifest ID is the 1.29.1 one at the time of writing (check SteamDB if it fails). It only
+works for accounts that own the game. You need the `Beat Saber_Data` folder from the download.
 
-```sh
-GAME="/path/to/depot_620981/Beat Saber_Data"
-```
+## Installing
 
-### 2. Unity 2019.4.28f1 parts
+### 1. The app
 
-`tools/fetch_unity.sh` downloads only the parts of the Unity 2019.4.28f1 editor and iOS build
-support that the build needs, from Unity's servers. Unity's license terms apply to them.
+Download `BeatSaber.ipa` from [Releases](../../releases) and install it with your sideloading
+tool (AltStore, SideStore, your own developer account, ...). You can also build it yourself, see
+[Building the app](#building-the-app).
 
-```sh
-tools/fetch_unity.sh
-```
+### 2. Your game files
 
-### 3. Helper tools
+Converting your copy needs a Mac (Apple Silicon or Intel) with the Xcode command line tools,
+Python 3, CMake, Ninja and the .NET 10 SDK, and about 6 GB of free space. Once, set up the helper
+tools:
 
 ```sh
 mkdir -p build
@@ -113,35 +82,58 @@ clang++ -std=c++14 -O2 -Ibuild/HLSLcc/include -Ibuild/HLSLcc/src/internal_includ
 dotnet build tools/bstool -c Release
 ```
 
-### 4. Convert the game data
-
-Shaders are translated from Direct3D 11 to Metal, then textures are re-encoded as ASTC for iOS:
+Then convert your copy (this takes a while, mostly for the textures):
 
 ```sh
-PY=build/venv/bin/python
-$PY shaderconv/convert_data.py "$GAME" "$BS_WORK/data_metal" build/hlslcc_metal osx
-$PY shaderconv/convert_data.py "$BS_WORK/data_metal" "$BS_WORK/data_ios" none ios
-$PY shaderconv/patch_settings.py "$BS_WORK/data_ios/globalgamemanagers" --ios
-sed -i '' -e 's/^vr-enabled=1/vr-enabled=0/' -e '/^vr-device-list=/d' "$BS_WORK/data_ios/boot.config"
+tools/import_game.sh "/path/to/depot_620981/Beat Saber_Data" ~/BeatSaberImport
 ```
 
-### 5. Build the port and patch the game code
+It converts the shaders to Metal and the textures to ASTC, adapts the player settings for iOS,
+and patches the game's assemblies for touch input, custom songs and iOS. Nothing is uploaded
+anywhere.
+
+### 3. Copy them to your device
+
+Copy the resulting `GameData` folder (about 1.7 GB) into the app's folder:
+
+- **From a Mac:** Finder › your iPhone/iPad › Files › Beat Saber, and drop `GameData` on it.
+- **From Windows:** the Apple Devices app (or iTunes) › your device › Files › Beat Saber.
+- **On the device:** Files › On My iPhone › Beat Saber › GameData (for example via AirDrop or a
+  cloud drive).
+
+Open the app. If something is missing, it tells you which files.
+
+### Can I convert on Windows or Linux?
+
+Not at the moment: the texture encoder uses macOS's ImageIO. The other steps (shader translation,
+the patcher) could run elsewhere.
+
+## Building the app
+
+Only needed if you don't use the release. Building also needs a Mac with Xcode, Rosetta 2 on
+Apple Silicon (Unity's 2019 build tools are x86_64), about 15 GB of free space, and your copy of
+the game: the linker uses the game's assemblies to decide which parts of the .NET class library
+and Unity's engine to keep. None of the game's code is compiled into the app.
 
 ```sh
-MANAGED="$GAME/Managed"
-tools/build_port.sh "$MANAGED" "$BS_WORK/port"
-tools/bstool/bin/Release/net10.0/bstool patch "$MANAGED" "$BS_WORK/patched" "$BS_WORK/port/BeatSaberPort.dll"
-tools/il2cpp_ios.sh "$MANAGED" "$BS_WORK/patched" "$BS_WORK/ios"
+export BS_WORK=~/BeatSaber-iOS-work
+GAME="/path/to/depot_620981/Beat Saber_Data"
+
+tools/fetch_unity.sh                          # Unity 2019.4.28f1 parts, from Unity's servers
+tools/hybridclr/prepare.sh "$BS_WORK/hclr"    # IL2CPP runtime + HybridCLR (see the script)
+dotnet build tools/bstool -c Release
+
+tools/build_port.sh "$GAME/Managed" "$BS_WORK/port"
+tools/bstool/bin/Release/net10.0/bstool patch "$GAME/Managed" "$BS_WORK/patched" "$BS_WORK/port/BeatSaberPort.dll"
+mkdir -p "$BS_WORK/managed" && cp "$GAME/Managed"/*.dll "$BS_WORK/patched"/*.dll "$BS_WORK/managed/" && rm "$BS_WORK/managed/BeatSaberPort.dll"
+HCLR_SRC="$BS_WORK/hclr" tools/il2cpp_hclr.sh "$BS_WORK/managed" "$BS_WORK/port" "$BS_WORK/il2cpp"
+TARGET=ios BDWGC_INC="$BS_WORK/unity/Unity/Unity.app/Contents/il2cpp/external/bdwgc/include" \
+  tools/ios/build_libil2cpp.sh "$BS_WORK/hclr/tree" "$BS_WORK/libil2cpp-hclr.a"
+HCLR="$BS_WORK/il2cpp" HCLR_SRC="$BS_WORK/hclr" HCLR_LIB="$BS_WORK/libil2cpp-hclr.a" \
+  PORT_DLL="$BS_WORK/port/BeatSaberPort.dll" tools/ios/build_ios.sh
 ```
 
-### 6. Build the app
-
-```sh
-IOS_DATA="$BS_WORK/data_ios" tools/ios/build_ios.sh
-```
-
-The unsigned `BeatSaber.ipa` ends up in `$BS_WORK/ios/out`. Sign and install it with your
-sideloading tool. Optional settings:
+The unsigned `BeatSaber.ipa` ends up in `$BS_WORK/ios/out`. Optional settings:
 
 - `APP_ICON=/path/to/image.png`: an image of your choice for the home screen icon (cropped to a
   centred square). The repository does not ship one.
@@ -153,9 +145,7 @@ sideloading tool. Optional settings:
 Open **SONGS +** in the main menu to browse and download maps from
 [BeatSaver](https://beatsaver.com), then find them under Solo › Custom Songs.
 
-You can also add songs yourself. The game's folder is in the Files app under
-On My iPhone › Beat Saber (from a computer: Finder on a Mac, or iTunes / the Apple Devices app
-on Windows, in the iPhone's Files tab):
+You can also add songs yourself, in the same Beat Saber folder as `GameData`:
 
 - **`.zip` files** (as downloaded from BeatSaver): put them in the `Beat Saber` folder or in
   `Beat Saber/CustomLevels`. They are installed and the zip is deleted. A zip that can't be used
@@ -171,17 +161,30 @@ it is.
 
 Maps are made by the community; check the license of what you download.
 
+## Credits
+
+- [HybridCLR](https://github.com/focus-creative-games/hybridclr) and
+  [il2cpp_plus](https://github.com/focus-creative-games/il2cpp_plus) (MIT), Code Philosophy: the
+  IL interpreter that runs the game's code. Version 8.15.0, the last release supporting
+  Unity 2019, merged into Unity 2019.4.28's IL2CPP runtime by `tools/hybridclr/prepare.sh`.
+- [HLSLcc](https://github.com/Unity-Technologies/HLSLcc) (Unity), shader translation.
+- [UnityPy](https://github.com/K0lb3/UnityPy) (MIT), reading and writing Unity data files.
+- [Mono.Cecil](https://github.com/jbevain/cecil) (MIT), patching assemblies.
+- The released app includes runtime parts of Unity 2019.4.28f1 (the iOS player engine, the
+  IL2CPP runtime and Unity's build of the Mono class library), downloaded from Unity's servers
+  at build time, under Unity's terms.
+
 ## Legal
 
 - This is an unofficial fan project. It is not affiliated with, endorsed by or supported by
   Beat Games, Meta Platforms or Unity Technologies. Beat Saber is a trademark of Beat Games.
-- No game files, game code, game assets or Unity binaries are included in or distributed with
-  this repository. You must supply your own legally purchased copy of the game; the project does
+- No game files, game code, game assets or game art are included in this repository or in the
+  released app. You must supply your own legally purchased copy of the game; the project does
   not help you obtain the game in any other way.
 - You are responsible for making sure that your use of these tools complies with the game's
   EULA, Steam's terms, Unity's license terms and the laws of your country. Use it at your own
   risk.
-- Do not share the `.ipa` you build: it contains the game's files. Do not post game files in
+- Never share your `GameData` folder: it contains the game's files. Do not post game files in
   issues or pull requests.
 - The code in this repository is released under the MIT License (see `LICENSE`) and is provided
   "as is", without warranty of any kind.

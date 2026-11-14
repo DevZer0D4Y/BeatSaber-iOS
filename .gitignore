@@ -47,3 +47,5 @@ venv/
 *.log
 .DS_Store
 ._*
+tools/hclrgen/bin/
+tools/hclrgen/obj/
